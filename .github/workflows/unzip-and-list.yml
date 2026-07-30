@@ -1,0 +1,65 @@
+name: Unzip and list ZIP contents
+
+on:
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    name: Unzip and inspect ZIP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install unzip
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y unzip
+
+      - name: Ensure ZIP exists
+        run: |
+          if [ ! -f "sugaring-certification-wpbakery-page.zip" ]; then
+            echo "ZIP not found at repo root: sugaring-certification-wpbakery-page.zip" >&2
+            exit 1
+          fi
+
+      - name: List ZIP central directory
+        run: |
+          echo "=== ZIP listing (unzip -l) ==="
+          unzip -l sugaring-certification-wpbakery-page.zip || true
+
+      - name: Extract ZIP to ./extracted
+        run: |
+          rm -rf extracted
+          mkdir -p extracted
+          unzip -o sugaring-certification-wpbakery-page.zip -d extracted
+
+      - name: Show top-level entries under extracted
+        run: |
+          echo "=== Top-level entries ==="
+          ls -alh extracted | sed -n '1,200p'
+
+      - name: Find and print text-like files
+        run: |
+          set -o pipefail
+          echo "Searching for text-like files (README, md, php, js, css, json, txt, html)"
+          find extracted -type f \( -iname "*.md" -o -iname "*.markdown" -o -iname "README*" -o -iname "*.php" -o -iname "*.js" -o -iname "*.css" -o -iname "*.json" -o -iname "*.txt" -o -iname "*.html" -o -iname "*.xml" \) -print0 | \
+          while IFS= read -r -d '' file; do
+            echo
+            echo "================================================================"
+            echo "FILE: $file"
+            echo "SIZE: $(wc -c < "$file") bytes"
+            echo "FILETYPE: $(file -b --mime-type "$file")"
+            echo "----------------------------------------------------------------"
+            sed -n '1,400p' "$file" || true
+            echo "\n\n"
+          done
+
+      - name: Search for potential secrets (simple heuristics)
+        run: |
+          echo "=== Simple secret scan (apikey, secret, passwd, token) in text-like files ==="
+          grep -RIn --exclude-dir=.git -E "api[_-]?key|secret|passwd|password|token|AUTH|aws_access_key_id|aws_secret_access_key" extracted || true
+
+      - name: Summary
+        run: |
+          echo "Inspection finished. If logs are large, download them from the workflow run page."
